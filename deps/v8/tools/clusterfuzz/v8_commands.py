@@ -18,6 +18,7 @@ PYTHON3 = sys.version_info >= (3, 0)
 DEFAULT_FLAGS = [
   '--correctness-fuzzer-suppressions',
   '--expose-gc',
+  '--fuzzing',
   '--allow-natives-for-differential-fuzzing',
   '--invoke-weak-callbacks',
   '--omit-quit',
@@ -38,9 +39,6 @@ JS_SUPPRESSIONS = os.path.join(BASE_PATH, 'v8_suppressions.js')
 # Config-specific mock files.
 ARCH_MOCKS = os.path.join(BASE_PATH, 'v8_mock_archs.js')
 WEBASSEMBLY_MOCKS = os.path.join(BASE_PATH, 'v8_mock_webassembly.js')
-
-# Timeout in seconds for one d8 run.
-TIMEOUT = 3
 
 
 def _startup_files(options):
@@ -69,7 +67,7 @@ class Command(object):
 
     self.files = _startup_files(options)
 
-  def run(self, testcase, verbose=False):
+  def run(self, testcase, timeout, verbose=False):
     """Run the executable with a specific testcase."""
     args = [self.executable] + self.flags + self.files + [testcase]
     if verbose:
@@ -81,7 +79,7 @@ class Command(object):
     return Execute(
         args,
         cwd=os.path.dirname(os.path.abspath(testcase)),
-        timeout=TIMEOUT,
+        timeout=timeout,
     )
 
   @property

@@ -44,8 +44,8 @@ std::shared_ptr<NativeModule> CompileToNativeModule(
     std::shared_ptr<const WasmModule> module, const ModuleWireBytes& wire_bytes,
     Handle<FixedArray>* export_wrappers_out);
 
-void RecompileNativeModule(Isolate* isolate, NativeModule* native_module,
-                           ExecutionTier tier);
+void RecompileNativeModule(NativeModule* native_module,
+                           TieringState new_tiering_state);
 
 V8_EXPORT_PRIVATE
 void CompileJsToWasmWrappers(Isolate* isolate, const WasmModule* module,
@@ -60,15 +60,11 @@ WasmCode* CompileImportWrapper(
     compiler::WasmImportCallKind kind, const FunctionSig* sig,
     WasmImportWrapperCache::ModificationScope* cache_scope);
 
-V8_EXPORT_PRIVATE Handle<Script> CreateWasmScript(
-    Isolate* isolate, Vector<const uint8_t> wire_bytes,
-    Vector<const char> source_map_url, WireBytesRef name,
-    Vector<const char> source_url = {});
-
 // Triggered by the WasmCompileLazy builtin. The return value indicates whether
 // compilation was successful. Lazy compilation can fail only if validation is
 // also lazy.
-bool CompileLazy(Isolate*, NativeModule*, int func_index);
+// TODO(clemensb): Stop calling this from the interpreter, and don't export.
+V8_EXPORT_PRIVATE bool CompileLazy(Isolate*, NativeModule*, int func_index);
 
 int GetMaxBackgroundTasks();
 

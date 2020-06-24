@@ -234,6 +234,12 @@ class PerIsolateData {
 
   AsyncHooks* GetAsyncHooks() { return async_hooks_wrapper_; }
 
+  void RemoveUnhandledPromise(Local<Promise> promise);
+  void AddUnhandledPromise(Local<Promise> promise, Local<Message> message,
+                           Local<Value> exception);
+  int HandleUnhandledPromiseRejections();
+  size_t GetUnhandledPromiseCount();
+
  private:
   friend class Shell;
   friend class RealmScope;
@@ -245,6 +251,8 @@ class PerIsolateData {
   Global<Value> realm_shared_;
   std::queue<Global<Function>> set_timeout_callbacks_;
   std::queue<Global<Context>> set_timeout_contexts_;
+  std::vector<std::tuple<Global<Promise>, Global<Message>, Global<Value>>>
+      unhandled_promises_;
   AsyncHooks* async_hooks_wrapper_;
 
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& args,
@@ -268,9 +276,11 @@ class ShellOptions {
   bool wait_for_wasm = true;
   bool stress_opt = false;
   int stress_runs = 1;
+  bool stress_snapshot = false;
   bool interactive_shell = false;
   bool test_shell = false;
   bool expected_to_throw = false;
+  bool ignore_unhandled_promises = false;
   bool mock_arraybuffer_allocator = false;
   size_t mock_arraybuffer_allocator_limit = 0;
   bool multi_mapped_mock_allocator = false;
@@ -278,8 +288,8 @@ class ShellOptions {
   int num_isolates = 1;
   v8::ScriptCompiler::CompileOptions compile_options =
       v8::ScriptCompiler::kNoCompileOptions;
-  bool stress_background_compile = false;
   CodeCacheOptions code_cache_options = CodeCacheOptions::kNoProduceCache;
+  bool streaming_compile = false;
   SourceGroup* isolate_sources = nullptr;
   const char* icu_data_file = nullptr;
   const char* icu_locale = nullptr;
@@ -323,13 +333,18 @@ class Shell : public i::AllStatic {
   static void ReportException(Isolate* isolate, TryCatch* try_catch);
   static Local<String> ReadFile(Isolate* isolate, const char* name);
   static Local<Context> CreateEvaluationContext(Isolate* isolate);
-  static int RunMain(Isolate* isolate, int argc, char* argv[], bool last_run);
+  static int RunMain(Isolate* isolate, bool last_run);
   static int Main(int argc, char* argv[]);
   static void Exit(int exit_code);
   static void OnExit(Isolate* isolate);
   static void CollectGarbage(Isolate* isolate);
   static bool EmptyMessageQueues(Isolate* isolate);
   static bool CompleteMessageLoop(Isolate* isolate);
+
+  static bool HandleUnhandledPromiseRejections(Isolate* isolate);
+
+  static void PostForegroundTask(Isolate* isolate, std::unique_ptr<Task> task);
+  static void PostBlockingBackgroundTask(std::unique_ptr<Task> task);
 
   static std::unique_ptr<SerializationData> SerializeValue(
       Isolate* isolate, Local<Value> value, Local<Value> transfer);
@@ -434,6 +449,10 @@ class Shell : public i::AllStatic {
                                              Local<Module> module,
                                              Local<Object> meta);
 
+#ifdef V8_FUZZILLI
+  static void Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& args);
+#endif  // V8_FUZZILLI
+
   // Data is of type DynamicImportData*. We use void* here to be able
   // to conform with MicrotaskCallback interface and enqueue this
   // function in the microtask queue.
@@ -446,6 +465,8 @@ class Shell : public i::AllStatic {
   static ArrayBuffer::Allocator* array_buffer_allocator;
 
   static void SetWaitUntilDone(Isolate* isolate, bool value);
+  static void NotifyStartStreamingTask(Isolate* isolate);
+  static void NotifyFinishStreamingTask(Isolate* isolate);
 
   static char* ReadCharsFromTcpPort(const char* name, int* size_out);
 
@@ -461,6 +482,8 @@ class Shell : public i::AllStatic {
 
   static void Initialize(Isolate* isolate, D8Console* console,
                          bool isOnMainThread = true);
+
+  static void PromiseRejectCallback(v8::PromiseRejectMessage reject_message);
 
  private:
   static Global<Context> evaluation_context_;
@@ -506,10 +529,12 @@ class Shell : public i::AllStatic {
   // the isolate_status_ needs to be concurrency-safe.
   static base::LazyMutex isolate_status_lock_;
   static std::map<Isolate*, bool> isolate_status_;
+  static std::map<Isolate*, int> isolate_running_streaming_tasks_;
 
   static base::LazyMutex cached_code_mutex_;
   static std::map<std::string, std::unique_ptr<ScriptCompiler::CachedData>>
       cached_code_map_;
+  static std::atomic<int> unhandled_promise_rejections_;
 };
 
 }  // namespace v8

@@ -144,8 +144,9 @@ class V8_EXPORT_PRIVATE Node final {
   // Returns true if {owner1} and {owner2} are the only users of {this} node.
   bool OwnedBy(Node const* owner1, Node const* owner2) const;
 
-  void Print() const;
-  void Print(std::ostream&) const;
+  void Print() const { Print(1); }
+  void Print(int depth) const;
+  void Print(std::ostream&, int depth = 1) const;
 
  private:
   struct Use;
@@ -302,6 +303,16 @@ Node** Node::OutOfLineInputs::inputs() {
 
 std::ostream& operator<<(std::ostream& os, const Node& n);
 
+// Base class for node wrappers.
+class NodeWrapper {
+ public:
+  explicit constexpr NodeWrapper(Node* node) : node_(node) {}
+  operator Node*() const { return node_; }
+  Node* operator->() const { return node_; }
+
+ private:
+  Node* node_;
+};
 
 // Typedefs to shorten commonly used Node containers.
 using NodeDeque = ZoneDeque<Node*>;

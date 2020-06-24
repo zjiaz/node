@@ -132,6 +132,20 @@ static void VisitRRI(InstructionSelector* selector, ArchOpcode opcode,
                  g.UseRegister(node->InputAt(0)), g.UseImmediate(imm));
 }
 
+static void VisitSimdShift(InstructionSelector* selector, ArchOpcode opcode,
+                           Node* node) {
+  Mips64OperandGenerator g(selector);
+  if (g.IsIntegerConstant(node->InputAt(1))) {
+    selector->Emit(opcode, g.DefineAsRegister(node),
+                   g.UseRegister(node->InputAt(0)),
+                   g.UseImmediate(node->InputAt(1)));
+  } else {
+    selector->Emit(opcode, g.DefineAsRegister(node),
+                   g.UseRegister(node->InputAt(0)),
+                   g.UseRegister(node->InputAt(1)));
+  }
+}
+
 static void VisitRRIR(InstructionSelector* selector, ArchOpcode opcode,
                       Node* node) {
   Mips64OperandGenerator g(selector);
@@ -147,6 +161,14 @@ static void VisitRRR(InstructionSelector* selector, ArchOpcode opcode,
   selector->Emit(opcode, g.DefineAsRegister(node),
                  g.UseRegister(node->InputAt(0)),
                  g.UseRegister(node->InputAt(1)));
+}
+
+static void VisitUniqueRRR(InstructionSelector* selector, ArchOpcode opcode,
+                           Node* node) {
+  Mips64OperandGenerator g(selector);
+  selector->Emit(opcode, g.DefineAsRegister(node),
+                 g.UseUniqueRegister(node->InputAt(0)),
+                 g.UseUniqueRegister(node->InputAt(1)));
 }
 
 void VisitRRRR(InstructionSelector* selector, ArchOpcode opcode, Node* node) {
@@ -837,6 +859,10 @@ void InstructionSelector::VisitWord64Sar(Node* node) {
   if (TryEmitExtendingLoad(this, node, node)) return;
   VisitRRO(this, kMips64Dsar, node);
 }
+
+void InstructionSelector::VisitWord32Rol(Node* node) { UNREACHABLE(); }
+
+void InstructionSelector::VisitWord64Rol(Node* node) { UNREACHABLE(); }
 
 void InstructionSelector::VisitWord32Ror(Node* node) {
   VisitRRO(this, kMips64Ror, node);
@@ -2733,7 +2759,9 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
 }
 
 #define SIMD_TYPE_LIST(V) \
+  V(F64x2)                \
   V(F32x4)                \
+  V(I64x2)                \
   V(I32x4)                \
   V(I16x8)                \
   V(I8x16)
@@ -2758,21 +2786,24 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
   V(I32x4UConvertI16x8Low, kMips64I32x4UConvertI16x8Low)   \
   V(I32x4UConvertI16x8High, kMips64I32x4UConvertI16x8High) \
   V(I32x4Abs, kMips64I32x4Abs)                             \
+  V(I32x4BitMask, kMips64I32x4BitMask)                     \
   V(I16x8Neg, kMips64I16x8Neg)                             \
   V(I16x8SConvertI8x16Low, kMips64I16x8SConvertI8x16Low)   \
   V(I16x8SConvertI8x16High, kMips64I16x8SConvertI8x16High) \
   V(I16x8UConvertI8x16Low, kMips64I16x8UConvertI8x16Low)   \
   V(I16x8UConvertI8x16High, kMips64I16x8UConvertI8x16High) \
   V(I16x8Abs, kMips64I16x8Abs)                             \
+  V(I16x8BitMask, kMips64I16x8BitMask)                     \
   V(I8x16Neg, kMips64I8x16Neg)                             \
   V(I8x16Abs, kMips64I8x16Abs)                             \
+  V(I8x16BitMask, kMips64I8x16BitMask)                     \
   V(S128Not, kMips64S128Not)                               \
-  V(S1x4AnyTrue, kMips64S1x4AnyTrue)                       \
-  V(S1x4AllTrue, kMips64S1x4AllTrue)                       \
-  V(S1x8AnyTrue, kMips64S1x8AnyTrue)                       \
-  V(S1x8AllTrue, kMips64S1x8AllTrue)                       \
-  V(S1x16AnyTrue, kMips64S1x16AnyTrue)                     \
-  V(S1x16AllTrue, kMips64S1x16AllTrue)
+  V(V32x4AnyTrue, kMips64V32x4AnyTrue)                     \
+  V(V32x4AllTrue, kMips64V32x4AllTrue)                     \
+  V(V16x8AnyTrue, kMips64V16x8AnyTrue)                     \
+  V(V16x8AllTrue, kMips64V16x8AllTrue)                     \
+  V(V8x16AnyTrue, kMips64V8x16AnyTrue)                     \
+  V(V8x16AllTrue, kMips64V8x16AllTrue)
 
 #define SIMD_SHIFT_OP_LIST(V) \
   V(I64x2Shl)                 \
@@ -2875,7 +2906,7 @@ void InstructionSelector::VisitInt64AbsWithOverflow(Node* node) {
 
 void InstructionSelector::VisitS128Zero(Node* node) {
   Mips64OperandGenerator g(this);
-  Emit(kMips64S128Zero, g.DefineSameAsFirst(node));
+  Emit(kMips64S128Zero, g.DefineAsRegister(node));
 }
 
 #define SIMD_VISIT_SPLAT(Type)                               \
@@ -2883,7 +2914,6 @@ void InstructionSelector::VisitS128Zero(Node* node) {
     VisitRR(this, kMips64##Type##Splat, node);               \
   }
 SIMD_TYPE_LIST(SIMD_VISIT_SPLAT)
-SIMD_VISIT_SPLAT(F64x2)
 #undef SIMD_VISIT_SPLAT
 
 #define SIMD_VISIT_EXTRACT_LANE(Type, Sign)                              \
@@ -2892,6 +2922,7 @@ SIMD_VISIT_SPLAT(F64x2)
   }
 SIMD_VISIT_EXTRACT_LANE(F64x2, )
 SIMD_VISIT_EXTRACT_LANE(F32x4, )
+SIMD_VISIT_EXTRACT_LANE(I64x2, )
 SIMD_VISIT_EXTRACT_LANE(I32x4, )
 SIMD_VISIT_EXTRACT_LANE(I16x8, U)
 SIMD_VISIT_EXTRACT_LANE(I16x8, S)
@@ -2904,7 +2935,6 @@ SIMD_VISIT_EXTRACT_LANE(I8x16, S)
     VisitRRIR(this, kMips64##Type##ReplaceLane, node);             \
   }
 SIMD_TYPE_LIST(SIMD_VISIT_REPLACE_LANE)
-SIMD_VISIT_REPLACE_LANE(F64x2)
 #undef SIMD_VISIT_REPLACE_LANE
 
 #define SIMD_VISIT_UNOP(Name, instruction)            \
@@ -2916,7 +2946,7 @@ SIMD_UNOP_LIST(SIMD_VISIT_UNOP)
 
 #define SIMD_VISIT_SHIFT_OP(Name)                     \
   void InstructionSelector::Visit##Name(Node* node) { \
-    VisitRRI(this, kMips64##Name, node);              \
+    VisitSimdShift(this, kMips64##Name, node);        \
   }
 SIMD_SHIFT_OP_LIST(SIMD_VISIT_SHIFT_OP)
 #undef SIMD_VISIT_SHIFT_OP
@@ -3078,6 +3108,22 @@ void InstructionSelector::VisitSignExtendWord32ToInt64(Node* node) {
   Mips64OperandGenerator g(this);
   Emit(kMips64Shl, g.DefineAsRegister(node), g.UseRegister(node->InputAt(0)),
        g.TempImmediate(0));
+}
+
+void InstructionSelector::VisitF32x4Pmin(Node* node) {
+  VisitUniqueRRR(this, kMips64F32x4Pmin, node);
+}
+
+void InstructionSelector::VisitF32x4Pmax(Node* node) {
+  VisitUniqueRRR(this, kMips64F32x4Pmax, node);
+}
+
+void InstructionSelector::VisitF64x2Pmin(Node* node) {
+  VisitUniqueRRR(this, kMips64F64x2Pmin, node);
+}
+
+void InstructionSelector::VisitF64x2Pmax(Node* node) {
+  VisitUniqueRRR(this, kMips64F64x2Pmax, node);
 }
 
 // static
