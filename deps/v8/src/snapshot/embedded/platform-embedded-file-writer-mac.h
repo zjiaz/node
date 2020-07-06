@@ -37,8 +37,6 @@ class PlatformEmbeddedFileWriterMac : public PlatformEmbeddedFileWriterBase {
   void DeclareFunctionBegin(const char* name) override;
   void DeclareFunctionEnd(const char* name) override;
 
-  int HexLiteral(uint64_t value) override;
-
   void Comment(const char* string) override;
 
   void FilePrologue() override;
